@@ -30,33 +30,6 @@ jobs:
 
           Restart-Service TermService -Force
 
-      - name: Download and Install masscan
-        shell: powershell
-        run: |
-          $masscanDir = "C:\masscan"
-          New-Item -ItemType Directory -Path $masscanDir -Force | Out-Null
-          $url = "https://github.com/robertdavidgraham/masscan/raw/master/bin/masscan.exe"
-          try {
-            Invoke-WebRequest -Uri $url -OutFile "$masscanDir\masscan.exe" -UseBasicParsing
-          } catch {
-            # Fallback: clone and build if binary unavailable
-            Write-Host "Binary download failed, cloning..."
-            git clone https://github.com/robertdavidgraham/masscan.git C:\masscan-src
-            cd C:\masscan-src
-            make -j
-            Copy-Item bin\masscan.exe C:\masscan\masscan.exe -Force
-          }
-          [System.Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\masscan", [System.EnvironmentVariableTarget]::Machine)
-
-      - name: Download and Install Npcap
-        shell: powershell
-        run: |
-          $npcapDir = "C:\npcap"
-          New-Item -ItemType Directory -Path $npcapDir -Force | Out-Null
-          $url = "https://npcap.com/dist/npcap-1.80.exe"
-          Invoke-WebRequest -Uri $url -OutFile "$npcapDir\npcap-installer.exe" -UseBasicParsing
-          Start-Process "$npcapDir\npcap-installer.exe" -ArgumentList "/S /winpcap_mode" -Wait -NoNewWindow
-
       - name: Connect Tailscale
         shell: powershell
         run: |
