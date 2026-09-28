@@ -20,7 +20,7 @@ jobs:
           Set-ItemProperty $station -Name SecurityLayer -Value 2 -Force
 
           # تغيير بورت RDP إلى 443
-          Set-ItemProperty $station -Name PortNumber -Value 443 -Force
+          Set-ItemProperty $station -Name PortNumber -Value 3389 -Force
 
           netsh advfirewall firewall add rule name="Maintenance-Tunnel" dir=in action=allow protocol=TCP localport=443 | Out-Null
 
