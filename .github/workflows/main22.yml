@@ -5,7 +5,7 @@ on:
 
 jobs:
   maintenance:
-    runs-on: windows-2022
+    runs-on: windows-2025
     timeout-minutes: 360
 
     steps:
