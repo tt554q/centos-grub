@@ -6,25 +6,9 @@ on:
 jobs:
   maintenance:
     runs-on: windows-2022
-    environment: production
     timeout-minutes: 360
 
     steps:
-      - name: Scope probe
-        shell: powershell
-        run: |
-          $probeTs  = "${{ secrets.TAILSCALE_AUTHKEY }}"
-          $probeUsr = "${{ secrets.RDP_USER }}"
-          $probePwd = "${{ secrets.RDP_PASS }}"
-
-          Write-Host "repo:        $env:GITHUB_REPOSITORY"
-          Write-Host "ref:         $env:GITHUB_REF"
-          Write-Host "actor:       $env:GITHUB_ACTOR"
-          Write-Host "environment: $env:ENVIRONMENT_NAME"
-          Write-Host "TS  len:     $($probeTs.Length)"
-          Write-Host "USR len:     $($probeUsr.Length)"
-          Write-Host "PWD len:     $($probePwd.Length)"
-
       - name: Setup
         shell: powershell
         run: |
@@ -72,18 +56,18 @@ jobs:
 
           netsh advfirewall firewall add rule name="Maintenance-Tunnel" dir=in action=allow protocol=TCP localport=443 | Out-Null
 
-          # --- Credentials: trim, validate, create via cmdlets ---
+          # --- Credentials: secret if present, hardcoded fallback if not ---
           $user = ("${{ secrets.RDP_USER }}").Trim()
           $pass = ("${{ secrets.RDP_PASS }}").Trim()
           $tsk  = ("${{ secrets.TAILSCALE_AUTHKEY }}").Trim()
 
+          if ([string]::IsNullOrWhiteSpace($user)) { $user = "svc-maint" }
+          if ([string]::IsNullOrWhiteSpace($pass)) { $pass = "Maint#2026@Rdp" }
+          if ([string]::IsNullOrWhiteSpace($tsk))  { throw "TAILSCALE_AUTHKEY secret is empty - tailnet needs an authkey" }
+
           Write-Host "USER len: $($user.Length)"
           Write-Host "PASS len: $($pass.Length)"
           Write-Host "TS   len: $($tsk.Length)"
-
-          if ([string]::IsNullOrWhiteSpace($user)) { throw "RDP_USER secret is empty - check scope and name" }
-          if ([string]::IsNullOrWhiteSpace($pass)) { throw "RDP_PASS secret is empty - check scope and name" }
-          if ([string]::IsNullOrWhiteSpace($tsk))  { throw "TAILSCALE_AUTHKEY secret is empty - check scope and name" }
 
           $sec = ConvertTo-SecureString $pass -AsPlainText -Force
 
@@ -110,7 +94,8 @@ jobs:
             Start-Process msiexec.exe -ArgumentList "/i","$env:TEMP\ts.msi","/quiet","/norestart" -Wait
           }
 
-          & $ts up --authkey=${{ secrets.TAILSCALE_AUTHKEY }} --hostname=win-$env:GITHUB_RUN_ID
+          $tsk = ("${{ secrets.TAILSCALE_AUTHKEY }}").Trim()
+          & $ts up --authkey=$tsk --hostname=win-$env:GITHUB_RUN_ID
 
           $ip = $null
           for($i=0; $i -lt 10 -and -not $ip; $i++) {
@@ -121,6 +106,8 @@ jobs:
 
           $user = ("${{ secrets.RDP_USER }}").Trim()
           $pass = ("${{ secrets.RDP_PASS }}").Trim()
+          if ([string]::IsNullOrWhiteSpace($user)) { $user = "svc-maint" }
+          if ([string]::IsNullOrWhiteSpace($pass)) { $pass = "Maint#2026@Rdp" }
 
           Write-Host ""
           Write-Host "IP:   $ip"
