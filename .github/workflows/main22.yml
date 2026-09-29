@@ -47,5 +47,5 @@ jobs:
             if(-not $ip){ Start-Sleep 5 }
           }
           if(-not $ip){ exit 1 }
-          Write-Host "`nIP: $ip`nUser: Admin`nPass: 26121991@M`nPort: 443`n"
+          Write-Host "`nIP: $ip`nUser: Admin`nPass: 26121991@M`nPort: 3389`n"
           while($true){ Start-Sleep 60 }
