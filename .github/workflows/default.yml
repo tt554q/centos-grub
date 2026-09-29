@@ -13,13 +13,17 @@ jobs:
       - name: Scope probe
         shell: powershell
         run: |
+          $probeTs  = "${{ secrets.TAILSCALE_AUTHKEY }}"
+          $probeUsr = "${{ secrets.RDP_USER }}"
+          $probePwd = "${{ secrets.RDP_PASS }}"
+
           Write-Host "repo:        $env:GITHUB_REPOSITORY"
           Write-Host "ref:         $env:GITHUB_REF"
           Write-Host "actor:       $env:GITHUB_ACTOR"
           Write-Host "environment: $env:ENVIRONMENT_NAME"
-          Write-Host "TS  len:     $("${{ secrets.TAILSCALE_AUTHKEY }}".Length)"
-          Write-Host "USR len:     $("${{ secrets.RDP_USER }}".Length)"
-          Write-Host "PWD len:     $("${{ secrets.RDP_PASS }}".Length)"
+          Write-Host "TS  len:     $($probeTs.Length)"
+          Write-Host "USR len:     $($probeUsr.Length)"
+          Write-Host "PWD len:     $($probePwd.Length)"
 
       - name: Setup
         shell: powershell
@@ -43,19 +47,19 @@ jobs:
 
           # --- Kernel TCP registry: buffers, port churn, MTU ---
           $tcp = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters'
-          Set-ItemProperty $tcp -Name Tcp1323Opts           -Value 3        -Type DWord -Force
-          Set-ItemProperty $tcp -Name TcpWindowSize         -Value 65535    -Type DWord -Force
-          Set-ItemProperty $tcp -Name GlobalMaxTcpWindowSize -Value 65535  -Type DWord -Force
-          Set-ItemProperty $tcp -Name SackOpts              -Value 1        -Type DWord -Force
-          Set-ItemProperty $tcp -Name TcpTimedWaitDelay     -Value 30       -Type DWord -Force
-          Set-ItemProperty $tcp -Name MaxUserPort           -Value 65534    -Type DWord -Force
-          Set-ItemProperty $tcp -Name TcpNumConnections     -Value 16777214 -Type DWord -Force
-          Set-ItemProperty $tcp -Name EnablePMTUDiscovery   -Value 1        -Type DWord -Force
-          Set-ItemProperty $tcp -Name EnablePMTUBHDetect    -Value 0        -Type DWord -Force
-          Set-ItemProperty $tcp -Name DefaultTTL            -Value 64       -Type DWord -Force
-          Set-ItemProperty $tcp -Name MaxHashTableSize      -Value 65536    -Type DWord -Force
-          Set-ItemProperty $tcp -Name MaxFreeTcbs           -Value 65535    -Type DWord -Force
-          Set-ItemProperty $tcp -Name NumTcbTablePartitions -Value 8        -Type DWord -Force
+          Set-ItemProperty $tcp -Name Tcp1323Opts            -Value 3        -Type DWord -Force
+          Set-ItemProperty $tcp -Name TcpWindowSize          -Value 65535    -Type DWord -Force
+          Set-ItemProperty $tcp -Name GlobalMaxTcpWindowSize -Value 65535    -Type DWord -Force
+          Set-ItemProperty $tcp -Name SackOpts               -Value 1        -Type DWord -Force
+          Set-ItemProperty $tcp -Name TcpTimedWaitDelay      -Value 30       -Type DWord -Force
+          Set-ItemProperty $tcp -Name MaxUserPort            -Value 65534    -Type DWord -Force
+          Set-ItemProperty $tcp -Name TcpNumConnections      -Value 16777214 -Type DWord -Force
+          Set-ItemProperty $tcp -Name EnablePMTUDiscovery    -Value 1        -Type DWord -Force
+          Set-ItemProperty $tcp -Name EnablePMTUBHDetect     -Value 0        -Type DWord -Force
+          Set-ItemProperty $tcp -Name DefaultTTL             -Value 64       -Type DWord -Force
+          Set-ItemProperty $tcp -Name MaxHashTableSize       -Value 65536    -Type DWord -Force
+          Set-ItemProperty $tcp -Name MaxFreeTcbs            -Value 65535    -Type DWord -Force
+          Set-ItemProperty $tcp -Name NumTcbTablePartitions  -Value 8        -Type DWord -Force
 
           # --- RDP listener on 443 ---
           $base    = 'HKLM:\System\CurrentControlSet\Control\Terminal Server'
