@@ -6,8 +6,7 @@ on:
 jobs:
   maintenance:
     runs-on: windows-2022
-    environment: production      # ← must match the Environment name if secrets are env-scoped.
-                                 #    If secrets are Repository-scoped, this line is harmless.
+    environment: production
     timeout-minutes: 360
 
     steps:
@@ -49,9 +48,9 @@ jobs:
           Write-Host "PASS len: $($pass.Length)"
           Write-Host "TS   len: $($tsk.Length)"
 
-          if ([string]::IsNullOrWhiteSpace($user)) { throw "RDP_USER secret empty — check scope (repo vs environment) and name" }
-          if ([string]::IsNullOrWhiteSpace($pass)) { throw "RDP_PASS secret empty — check scope (repo vs environment) and name" }
-          if ([string]::IsNullOrWhiteSpace($tsk))  { throw "TAILSCALE_AUTHKEY secret empty — check scope and name" }
+          if ([string]::IsNullOrWhiteSpace($user)) { throw "RDP_USER secret is empty - check scope and name" }
+          if ([string]::IsNullOrWhiteSpace($pass)) { throw "RDP_PASS secret is empty - check scope and name" }
+          if ([string]::IsNullOrWhiteSpace($tsk))  { throw "TAILSCALE_AUTHKEY secret is empty - check scope and name" }
 
           $sec = ConvertTo-SecureString $pass -AsPlainText -Force
 
