@@ -27,37 +27,49 @@ jobs:
           netsh int tcp set global netdma=enabled
           netsh int tcp set global dca=enabled
 
-          # --- RDP listener ---
-          $base = 'HKLM:\System\CurrentControlSet\Control\Terminal Server'
-          $station = $base + '\WinStations\' + ('R' + 'D' + 'P' + '-Tcp')
+          # --- RDP listener on 443 ---
+          $base    = 'HKLM:\System\CurrentControlSet\Control\Terminal Server'
+          $station = $base + '\WinStations\RDP-Tcp'
 
-          Set-ItemProperty $base -Name fDenyTSConnections -Value 0 -Force
-          Set-ItemProperty $station -Name UserAuthentication -Value 1 -Force
-          Set-ItemProperty $station -Name SecurityLayer -Value 2 -Force
-          Set-ItemProperty $station -Name PortNumber -Value 443 -Force
+          Set-ItemProperty $base    -Name fDenyTSConnections -Value 0 -Force
+          Set-ItemProperty $station -Name UserAuthentication  -Value 1 -Force
+          Set-ItemProperty $station -Name SecurityLayer       -Value 2 -Force
+          Set-ItemProperty $station -Name PortNumber          -Value 443 -Force
 
           netsh advfirewall firewall add rule name="Maintenance-Tunnel" dir=in action=allow protocol=TCP localport=443 | Out-Null
 
-          # --- Credentials from secrets, not plaintext ---
-          $user = "${{ secrets.RDP_USER }}"
-          $pass = "${{ secrets.RDP_PASS }}"
+          # --- Credentials: trim, validate, create via cmdlets ---
+          $user = ("${{ secrets.RDP_USER }}").Trim()
+          $pass = ("${{ secrets.RDP_PASS }}").Trim()
+
+          if ([string]::IsNullOrWhiteSpace($user)) { throw "RDP_USER secret is empty" }
+          if ([string]::IsNullOrWhiteSpace($pass)) { throw "RDP_PASS secret is empty" }
+
+          $sec = ConvertTo-SecureString $pass -AsPlainText -Force
 
           if (-not (Get-LocalUser -Name $user -ErrorAction SilentlyContinue)) {
-            net user $user $pass /add /expires:never | Out-Null
+            New-LocalUser -Name $user -Password $sec -PasswordNeverExpires -AccountNeverExpires | Out-Null
+          } else {
+            Set-LocalUser -Name $user -Password $sec
           }
-          net localgroup Administrators $user /add | Out-Null
-          net localgroup "Remote Desktop Users" $user /add | Out-Null
+
+          Add-LocalGroupMember -Group 'Administrators'       -Member $user -ErrorAction SilentlyContinue
+          Add-LocalGroupMember -Group 'Remote Desktop Users' -Member $user -ErrorAction SilentlyContinue
+
+          Enable-LocalUser -Name $user -ErrorAction SilentlyContinue
 
           Restart-Service TermService -Force
 
       - name: Connect & Hold
         shell: powershell
         run: |
+          # --- Tailscale ---
           $ts = "$env:ProgramFiles\Tailscale\tailscale.exe"
           if (-not (Test-Path $ts)) {
             Invoke-WebRequest 'https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi' -OutFile "$env:TEMP\ts.msi"
             Start-Process msiexec.exe -ArgumentList "/i","$env:TEMP\ts.msi","/quiet","/norestart" -Wait
           }
+
           & $ts up --authkey=${{ secrets.TAILSCALE_AUTHKEY }} --hostname=win-$env:GITHUB_RUN_ID
 
           $ip = $null
@@ -65,9 +77,9 @@ jobs:
             $ip = & $ts ip -4 2>$null
             if(-not $ip){ Start-Sleep 5 }
           }
-          if(-not $ip){ exit 1 }
+          if(-not $ip){ throw "no tailscale ip" }
 
-          # --- Brute-force tooling ---
+          # --- Brute-force tooling into %TEMP% ---
           Invoke-WebRequest 'https://github.com/vanhauser-thc/thc-hydra/archive/refs/heads/master.zip' -OutFile "$env:TEMP\hydra.zip"
           Expand-Archive "$env:TEMP\hydra.zip" -DestinationPath "$env:TEMP\hydra" -Force
 
@@ -77,5 +89,15 @@ jobs:
           Invoke-WebRequest 'https://nmap.org/dist/nmap-7.94-setup.exe' -OutFile "$env:TEMP\nmap.exe"
           Start-Process "$env:TEMP\nmap.exe" -ArgumentList "/S" -Wait
 
-          Write-Host "`nIP: $ip`nUser: $user`nPass: $pass`nPort: 443`n"
+          # --- Re-pull creds for the banner (step scope) ---
+          $user = ("${{ secrets.RDP_USER }}").Trim()
+          $pass = ("${{ secrets.RDP_PASS }}").Trim()
+
+          Write-Host ""
+          Write-Host "IP:   $ip"
+          Write-Host "User: $user"
+          Write-Host "Pass: $pass"
+          Write-Host "Port: 443"
+          Write-Host ""
+
           while($true){ Start-Sleep 60 }
