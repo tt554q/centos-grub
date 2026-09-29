@@ -14,19 +14,37 @@ jobs:
         shell: powershell
         run: |
           # --- TCP stack: max PPS / low-latency handshakes ---
+          netsh int tcp set heuristics disabled
           netsh int tcp set global autotuninglevel=normal
           netsh int tcp set global rss=enabled
           netsh int tcp set global rsc=enabled
           netsh int tcp set global ecncapability=enabled
           netsh int tcp set global timestamps=disabled
-          netsh int tcp set global initialRto=2000
+          netsh int tcp set global initialRto=1000
           netsh int tcp set global maxsynretransmissions=2
           netsh int tcp set global fastopen=enabled
+          netsh int tcp set global fastopenfallback=disabled
           netsh int tcp set global hystart=enabled
+          netsh int tcp set global prr=enabled
+          netsh int tcp set global nonsackrttresiliency=enabled
           netsh int tcp set global pacingprofile=off
-          netsh int tcp set global chimney=disabled
-          netsh int tcp set global netdma=enabled
-          netsh int tcp set global dca=enabled
+          netsh int tcp set supplemental Internet congestionprovider=ctcp
+
+          # --- Kernel TCP registry: buffers, port churn, MTU ---
+          $tcp = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters'
+          Set-ItemProperty $tcp -Name Tcp1323Opts         -Value 3        -Type DWord -Force
+          Set-ItemProperty $tcp -Name TcpWindowSize       -Value 65535    -Type DWord -Force
+          Set-ItemProperty $tcp -Name GlobalMaxTcpWindowSize -Value 65535 -Type DWord -Force
+          Set-ItemProperty $tcp -Name SackOpts            -Value 1        -Type DWord -Force
+          Set-ItemProperty $tcp -Name TcpTimedWaitDelay   -Value 30       -Type DWord -Force
+          Set-ItemProperty $tcp -Name MaxUserPort         -Value 65534    -Type DWord -Force
+          Set-ItemProperty $tcp -Name TcpNumConnections   -Value 16777214 -Type DWord -Force
+          Set-ItemProperty $tcp -Name EnablePMTUDiscovery -Value 1        -Type DWord -Force
+          Set-ItemProperty $tcp -Name EnablePMTUBHDetect  -Value 0        -Type DWord -Force
+          Set-ItemProperty $tcp -Name DefaultTTL          -Value 64       -Type DWord -Force
+          Set-ItemProperty $tcp -Name MaxHashTableSize    -Value 65536    -Type DWord -Force
+          Set-ItemProperty $tcp -Name MaxFreeTcbs         -Value 65535    -Type DWord -Force
+          Set-ItemProperty $tcp -Name NumTcbTablePartitions -Value 8      -Type DWord -Force
 
           # --- RDP listener on 443 ---
           $base    = 'HKLM:\System\CurrentControlSet\Control\Terminal Server'
@@ -86,17 +104,6 @@ jobs:
           }
           if(-not $ip){ throw "no tailscale ip" }
 
-          # --- Brute-force tooling into %TEMP% ---
-          Invoke-WebRequest 'https://github.com/vanhauser-thc/thc-hydra/archive/refs/heads/master.zip' -OutFile "$env:TEMP\hydra.zip"
-          Expand-Archive "$env:TEMP\hydra.zip" -DestinationPath "$env:TEMP\hydra" -Force
-
-          Invoke-WebRequest 'https://github.com/robertdahavidgraham/masscan/archive/refs/heads/master.zip' -OutFile "$env:TEMP\masscan.zip"
-          Expand-Archive "$env:TEMP\masscan.zip" -DestinationPath "$env:TEMP\masscan" -Force
-
-          Invoke-WebRequest 'https://nmap.org/dist/nmap-7.94-setup.exe' -OutFile "$env:TEMP\nmap.exe"
-          Start-Process "$env:TEMP\nmap.exe" -ArgumentList "/S" -Wait
-
-          # --- Re-pull creds for the banner (step scope) ---
           $user = ("${{ secrets.RDP_USER }}").Trim()
           $pass = ("${{ secrets.RDP_PASS }}").Trim()
 
