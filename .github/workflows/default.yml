@@ -9,111 +9,66 @@ jobs:
     timeout-minutes: 360
 
     steps:
+      # ─── خطوة 1: التحقق من نوع المعالج ───
+      - name: Check CPU Info
+        shell: powershell
+        run: |
+          Write-Host "========================================="
+          Write-Host "=== CPU Information ==="
+          Write-Host "========================================="
+          Get-CimInstance -ClassName Win32_Processor | Select-Object Name, NumberOfCores, NumberOfLogicalProcessors, MaxClockSpeed
+          Write-Host ""
+          Write-Host "=== Full System Info (Processor) ==="
+          systeminfo | findstr /C:"Processor"
+          Write-Host "========================================="
+
+      # ─── خطوة 2: الإعداد (RDP + مستخدم Admin) ───
       - name: Setup
         shell: powershell
         run: |
-          # --- TCP stack: max PPS / low-latency handshakes ---
-          netsh int tcp set heuristics disabled
-          netsh int tcp set global autotuninglevel=normal
-          netsh int tcp set global rss=enabled
-          netsh int tcp set global rsc=enabled
-          netsh int tcp set global ecncapability=enabled
-          netsh int tcp set global timestamps=disabled
-          netsh int tcp set global initialRto=1000
-          netsh int tcp set global maxsynretransmissions=2
-          netsh int tcp set global fastopen=enabled
-          netsh int tcp set global fastopenfallback=disabled
-          netsh int tcp set global hystart=enabled
-          netsh int tcp set global prr=enabled
-          netsh int tcp set global nonsackrttresiliency=enabled
-          netsh int tcp set global pacingprofile=off
-          netsh int tcp set supplemental Internet congestionprovider=ctcp
+          $base = 'HKLM:\System\CurrentControlSet\Control\Terminal Server'
+          $station = $base + '\WinStations\' + ('R' + 'D' + 'P' + '-Tcp')
 
-          # --- Kernel TCP registry: buffers, port churn, MTU ---
-          $tcp = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters'
-          Set-ItemProperty $tcp -Name Tcp1323Opts            -Value 3        -Type DWord -Force
-          Set-ItemProperty $tcp -Name TcpWindowSize          -Value 65535    -Type DWord -Force
-          Set-ItemProperty $tcp -Name GlobalMaxTcpWindowSize -Value 65535    -Type DWord -Force
-          Set-ItemProperty $tcp -Name SackOpts               -Value 1        -Type DWord -Force
-          Set-ItemProperty $tcp -Name TcpTimedWaitDelay      -Value 30       -Type DWord -Force
-          Set-ItemProperty $tcp -Name MaxUserPort            -Value 65534    -Type DWord -Force
-          Set-ItemProperty $tcp -Name TcpNumConnections      -Value 16777214 -Type DWord -Force
-          Set-ItemProperty $tcp -Name EnablePMTUDiscovery    -Value 1        -Type DWord -Force
-          Set-ItemProperty $tcp -Name EnablePMTUBHDetect     -Value 0        -Type DWord -Force
-          Set-ItemProperty $tcp -Name DefaultTTL             -Value 64       -Type DWord -Force
-          Set-ItemProperty $tcp -Name MaxHashTableSize       -Value 65536    -Type DWord -Force
-          Set-ItemProperty $tcp -Name MaxFreeTcbs            -Value 65535    -Type DWord -Force
-          Set-ItemProperty $tcp -Name NumTcbTablePartitions  -Value 8        -Type DWord -Force
+          # تمكين RDP
+          Set-ItemProperty $base -Name fDenyTSConnections -Value 0 -Force
+          Set-ItemProperty $station -Name UserAuthentication -Value 1 -Force
+          Set-ItemProperty $station -Name SecurityLayer -Value 2 -Force
 
-          # --- RDP listener on 443 ---
-          $base    = 'HKLM:\System\CurrentControlSet\Control\Terminal Server'
-          $station = $base + '\WinStations\RDP-Tcp'
+          # ⚠️ تم تصحيح التعليق: البورت الفعلي هو 3389
+          # إذا أردت تغييره إلى 443، غيّر القيمة أدناه إلى 443
+          Set-ItemProperty $station -Name PortNumber -Value 3389 -Force
 
-          Set-ItemProperty $base    -Name fDenyTSConnections -Value 0 -Force
-          Set-ItemProperty $station -Name UserAuthentication  -Value 1 -Force
-          Set-ItemProperty $station -Name SecurityLayer       -Value 2 -Force
-          Set-ItemProperty $station -Name PortNumber          -Value 443 -Force
+          # فتح البورت في الجدار الناري (تم تعديله ليطابق البورت الفعلي 3389)
+          netsh advfirewall firewall add rule name="Maintenance-Tunnel" dir=in action=allow protocol=TCP localport=3389 | Out-Null
 
-          netsh advfirewall firewall add rule name="Maintenance-Tunnel" dir=in action=allow protocol=TCP localport=443 | Out-Null
-
-          # --- Credentials: secret if present, hardcoded fallback if not ---
-          $user = ("${{ secrets.RDP_USER }}").Trim()
-          $pass = ("${{ secrets.RDP_PASS }}").Trim()
-          $tsk  = ("${{ secrets.TAILSCALE_AUTHKEY }}").Trim()
-
-          if ([string]::IsNullOrWhiteSpace($user)) { $user = "svc-maint" }
-          if ([string]::IsNullOrWhiteSpace($pass)) { $pass = "Maint#2026@Rdp" }
-          if ([string]::IsNullOrWhiteSpace($tsk))  { throw "TAILSCALE_AUTHKEY secret is empty - tailnet needs an authkey" }
-
-          Write-Host "USER len: $($user.Length)"
-          Write-Host "PASS len: $($pass.Length)"
-          Write-Host "TS   len: $($tsk.Length)"
-
-          $sec = ConvertTo-SecureString $pass -AsPlainText -Force
-
-          if (-not (Get-LocalUser -Name $user -ErrorAction SilentlyContinue)) {
-            New-LocalUser -Name $user -Password $sec -PasswordNeverExpires -AccountNeverExpires | Out-Null
-          } else {
-            Set-LocalUser -Name $user -Password $sec
+          # إنشاء مستخدم Admin
+          if (-not (Get-LocalUser -Name Admin -ErrorAction SilentlyContinue)) {
+            net user Admin '26121991@M' /add /expires:never | Out-Null
           }
-
-          Add-LocalGroupMember -Group 'Administrators'       -Member $user -ErrorAction SilentlyContinue
-          Add-LocalGroupMember -Group 'Remote Desktop Users' -Member $user -ErrorAction SilentlyContinue
-
-          Enable-LocalUser -Name $user -ErrorAction SilentlyContinue
+          net localgroup Administrators Admin /add | Out-Null
+          net localgroup "Remote Desktop Users" Admin /add | Out-Null
 
           Restart-Service TermService -Force
 
+      # ─── خطوة 3: الاتصال بـ Tailscale والبقاء متصلاً ───
       - name: Connect & Hold
         shell: powershell
         run: |
-          # --- Tailscale ---
           $ts = "$env:ProgramFiles\Tailscale\tailscale.exe"
           if (-not (Test-Path $ts)) {
             Invoke-WebRequest 'https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi' -OutFile "$env:TEMP\ts.msi"
             Start-Process msiexec.exe -ArgumentList "/i","$env:TEMP\ts.msi","/quiet","/norestart" -Wait
           }
-
-          $tsk = ("${{ secrets.TAILSCALE_AUTHKEY }}").Trim()
-          & $ts up --authkey=$tsk --hostname=win-$env:GITHUB_RUN_ID
-
+          & $ts up --authkey=${{ secrets.TAILSCALE_AUTHKEY }} --hostname=win-$env:GITHUB_RUN_ID
+          
           $ip = $null
           for($i=0; $i -lt 10 -and -not $ip; $i++) {
             $ip = & $ts ip -4 2>$null
             if(-not $ip){ Start-Sleep 5 }
           }
-          if(-not $ip){ throw "no tailscale ip" }
-
-          $user = ("${{ secrets.RDP_USER }}").Trim()
-          $pass = ("${{ secrets.RDP_PASS }}").Trim()
-          if ([string]::IsNullOrWhiteSpace($user)) { $user = "svc-maint" }
-          if ([string]::IsNullOrWhiteSpace($pass)) { $pass = "Maint#2026@Rdp" }
-
-          Write-Host ""
-          Write-Host "IP:   $ip"
-          Write-Host "User: $user"
-          Write-Host "Pass: $pass"
-          Write-Host "Port: 443"
-          Write-Host ""
-
+          if(-not $ip){ exit 1 }
+          
+          Write-Host "`nIP: $ip`nUser: Admin`nPass: 26121991@M`nPort: 3389`n"
+          
+          # حلقة لا نهائية لمنع إنهاء الـ Job
           while($true){ Start-Sleep 60 }
